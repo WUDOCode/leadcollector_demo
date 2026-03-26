@@ -1,0 +1,4 @@
+streamlit
+psycopg[binary]" -Encoding UTF8
+pandas
+plotly
