@@ -414,7 +414,7 @@ with st.sidebar:
         st.markdown('<span class="db-err">● DB offline — run: docker-compose up -d db</span>', unsafe_allow_html=True)
 
     st.markdown("---")
-    page = st.radio("Navigate", ["🚀 Pipeline", "📊 Dashboard", "🎯 Leads", "📈 Statistics"], label_visibility="collapsed")
+    page = st.radio("Navigate", ["🚀 Pipeline", "📊 Dashboard", "🎯 Leads", "📈 Statistics", "📖 About"], label_visibility="collapsed")
     st.markdown("---")
 
     # Job status in sidebar
@@ -1621,3 +1621,187 @@ elif page == "📈 Statistics":
             )
             fig_avg.update_traces(texttemplate="%{text:.2f}", textposition="outside")
             st.plotly_chart(fig_avg, use_container_width=True)
+
+# ─────────────────────────────────────────────
+#  PAGE: ABOUT
+# ─────────────────────────────────────────────
+elif page == "📖 About":
+    st.title("📖 About LeadCollector")
+
+    st.markdown("""
+    **LeadCollector** is an automated B2B lead generation pipeline built for
+    **Rail Cargo Group (RCG)**, a rail freight transport company operating across Central and Eastern Europe.
+
+    The core idea is simple: potential rail freight customers announce themselves in the news.
+    A company building a new factory, expanding a warehouse, or opening a logistics hub will
+    almost always publish a press release or appear in trade media — before they ever contact
+    a freight provider. LeadCollector monitors these sources continuously and surfaces those
+    signals automatically, so the BD team can focus on selling instead of searching.
+    """)
+
+    st.markdown("---")
+
+    # ── How a lead is made ───────────────────────────────────────
+    st.subheader("How a Lead is Created")
+    st.markdown("""
+    A lead goes through the following funnel from raw internet text to a CRM-ready contact:
+    """)
+
+    st.markdown("""
+    **1. Source monitoring (`discover.py`)**
+    The pipeline reads a registry of 50+ news sources — Austrian and German trade papers,
+    logistics magazines, construction industry news, steel and chemical sector outlets,
+    CEE regional business media, and railway-specific publications. For each source it uses
+    RSS feeds, sitemaps, or HTML scraping to collect new article URLs. Already-seen URLs are
+    tracked in the database so nothing is processed twice.
+
+    **2. Fetching (`fetch.py`)**
+    Each new URL is downloaded and the raw HTML is stored to disk. HTTP headers like ETag
+    and Last-Modified are saved so unchanged pages can be skipped on future runs.
+
+    **3. Text extraction (`extract.py`)**
+    The raw HTML is parsed to extract clean article text. Three strategies are tried in order:
+    first JSON-LD structured data (highest quality, used by ~30% of professional news sites),
+    then fast paragraph scraping, then Mozilla Readability as a fallback. Paywalled pages,
+    PDFs, and login pages are detected and discarded automatically.
+
+    **4. Pre-filter (`filters.py`)**
+    Before any LLM is involved, a fast keyword filter checks the title and first 800 characters
+    for freight and industry signals. Articles about sports, politics, celebrity news, or pure
+    finance with no logistics angle are discarded immediately — typically 60–80% of articles.
+    This keeps LLM costs low and processing fast.
+
+    **5. LLM classification (`classify.py`)**
+    Remaining articles are sent to a local LLM running via Ollama. The model receives the
+    article text and a structured prompt asking it to:
+    - Score the article **1–10** for rail freight lead potential
+    - Extract the **company name**, **city**, **country**
+    - Describe **who** is involved, **what** they are doing, and **when**
+    - Classify the **lead type** (factory expansion, warehouse, logistics hub, etc.)
+    - Assess **transport need** (raw material inbound, finished goods outbound, etc.)
+    - Rate **rail fit** (high / medium / low)
+
+    Results are stored in the database with the model name and prompt version so multiple
+    model runs can be compared side by side.
+
+    **6. Human review (this GUI)**
+    The sales team reviews articles scored ≥ 7 in the Leads tab. Each lead can be labeled
+    as **confirmed**, **follow-up**, **contacted**, or **rejected**. This feedback forms the
+    ground truth for benchmarking future model improvements.
+
+    **7. CRM export (`export_leads.py`)**
+    Confirmed leads are written into a Microsoft Dynamics CRM Excel import template with
+    all required fields mapped: company, contact details, city, country, description,
+    source campaign, and lead score.
+    """)
+
+    st.markdown("---")
+
+    # ── Scripts overview ─────────────────────────────────────────
+    st.subheader("Scripts Overview")
+
+    scripts = {
+        "discover.py": "Reads registry.yaml and finds new article URLs from 50+ sources via RSS, sitemap, or HTML scraping.",
+        "fetch.py": "Downloads raw HTML for each discovered URL and stores it to disk with HTTP cache headers.",
+        "extract.py": "Parses HTML and extracts clean article text using JSON-LD, paragraph scraping, or Readability.",
+        "filters.py": "Keyword-based pre-filter that instantly discards irrelevant articles without using the LLM.",
+        "classify.py": "Sends articles to a local Ollama LLM which scores them and extracts structured lead data.",
+        "benchmark.py": "Evaluates model/prompt combinations against ground truth labels. Outputs precision, recall, F1.",
+        "export_leads.py": "Exports confirmed leads to the Dynamics CRM Excel import template.",
+        "import_crm_leads.py": "One-time import of existing CRM leads to build the gold benchmark dataset.",
+    }
+
+    for script, desc in scripts.items():
+        with st.expander(f"`{script}`"):
+            st.markdown(desc)
+
+    st.markdown("---")
+
+    # ── Scoring ──────────────────────────────────────────────────
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Lead Scoring")
+        st.markdown("""
+        | Score | Meaning |
+        |-------|---------|
+        | 9–10 | Very strong — major industrial site, confirmed freight demand |
+        | 7–8 | Strong — clear physical investment, likely freight demand |
+        | 5–6 | Moderate — early stage, indirect signal |
+        | 3–4 | Weak — some relevance but no clear freight need |
+        | 1–2 | Not relevant — finance, HR, opinion |
+        | 0 | Pre-filtered — no LLM used |
+        """)
+
+    with col2:
+        st.subheader("What Makes a Good Lead")
+        st.markdown("""
+        RCG is looking for companies that will need to **ship goods by rail**. Strong signals:
+
+        - 🏭 New factory, production line, or industrial facility
+        - 🏗️ Warehouse or logistics hub construction
+        - ⛏️ Mining, quarrying, or raw material extraction
+        - 🧪 Chemical plant expansion or new process line
+        - 🌲 Sawmill, paper mill, or biomass facility
+        - 🔋 Battery or EV manufacturing plant
+        - 🏢 Large-scale construction requiring bulk materials
+
+        Weak or irrelevant signals:
+        - Financial results, management changes, M&A without logistics angle
+        - Retail, consumer goods, software
+        - Opinion pieces, political commentary
+        """)
+
+    st.markdown("---")
+
+    # ── Benchmark ────────────────────────────────────────────────
+    st.subheader("Benchmark Results")
+    st.markdown("""
+    4 models × 2 prompt strategies = **8 combinations** evaluated against
+    172 manually labeled leads (47 relevant, 125 rejected) from RCG's CRM.
+    Threshold: score ≥ 7 = predicted lead.
+    """)
+
+    benchmark_data = {
+        "Model": ["gemma3:4b", "gemma3:4b", "mistral:7b", "mistral:7b",
+                  "llama3.2:3b", "llama3.2:3b", "qwen2.5:3b", "qwen2.5:3b"],
+        "Prompt": ["B (generous)", "A (conservative)", "B (generous)", "A (conservative)",
+                   "A (conservative)", "B (generous)", "B (generous)", "A (conservative)"],
+        "Precision": [0.302, 0.291, 0.294, 0.292, 0.289, 0.286, 0.246, 0.200],
+        "Recall":    [0.957, 0.787, 0.933, 0.745, 0.936, 0.936, 0.362, 0.043],
+        "F1":        [0.459, 0.425, 0.447, 0.419, 0.442, 0.438, 0.293, 0.070],
+    }
+    import pandas as pd
+    df = pd.DataFrame(benchmark_data)
+    st.dataframe(
+        df.style.highlight_max(subset=["F1", "Recall"], color="#1a4a1a"),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.markdown("""
+    **Key findings:**
+    - Prompt B (generous/freight-first) consistently outperforms Prompt A across all models
+    - gemma3:4b achieves the best F1 (0.459) and recall (0.957) — finding 45 of 47 relevant leads
+    - Precision is similar across capable models (~0.29–0.30) — recall is the main differentiator
+    - High recall matters more than precision for lead generation: missing a lead is more costly than reviewing a false positive
+    - qwen2.5:3b is unsuitable — scores almost nothing with Prompt A (4.2% high scores)
+    """)
+
+    st.markdown("---")
+
+    # ── Tech stack ───────────────────────────────────────────────
+    st.subheader("Technology Stack")
+    st.markdown("""
+    | Layer | Technology |
+    |-------|-----------|
+    | Web scraping | Python, httpx, BeautifulSoup, feedparser |
+    | Text extraction | Mozilla Readability, JSON-LD, lxml |
+    | LLM inference | Ollama (local, privacy-preserving) |
+    | Best model | gemma3:4b with Prompt B |
+    | Database | PostgreSQL |
+    | GUI | Streamlit |
+    | CRM integration | openpyxl → Microsoft Dynamics |
+    | Sources | 50+ RSS feeds and news sites |
+    """)
+
+    st.markdown("---")
+    st.caption("Bachelor's thesis project · Rail Cargo Group · 2026")
