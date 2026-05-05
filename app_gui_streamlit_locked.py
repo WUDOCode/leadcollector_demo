@@ -239,13 +239,32 @@ hr { border-color: var(--border); margin: 1.2rem 0; }
 .kpi-flag-bubble:first-child{margin-left:0;}
 .kpi-more-pill{background:var(--navy);color:white;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;margin-left:6px;}
 .detail-drawer{background:var(--panel-2);border:1px solid var(--border);border-left:4px solid var(--navy);border-radius:0 12px 12px 12px;padding:18px 22px;margin:-6px 0 14px 24px;box-shadow:0 8px 24px rgba(15,23,42,0.04);}
-/* Score chip group — st.radio styled as pill toggle */
-[data-testid="stRadio"][aria-label="score-chips"] > div, .score-chip-wrap [data-testid="stRadio"] > div { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:4px; }
-.score-chip-wrap [data-testid="stRadio"] [role="radiogroup"] { gap:2px !important; flex-wrap:nowrap; }
-.score-chip-wrap [data-testid="stRadio"] label { border-radius:8px !important; padding:6px 14px !important; margin:0 !important; font-size:12px; font-weight:600; color:var(--muted); cursor:pointer; transition:all .15s ease; background:transparent; }
-.score-chip-wrap [data-testid="stRadio"] label:hover { background:#eef2f7; color:var(--text); }
-.score-chip-wrap [data-testid="stRadio"] label:has(input:checked) { background:var(--navy) !important; color:white !important; }
-.score-chip-wrap [data-testid="stRadio"] label > div:first-child { display:none; }
+/* Score chips — button-based toggle (works in every browser, no :has() needed) */
+.stButton > button[kind="primary"] {
+    background: var(--navy) !important;
+    color: white !important;
+    border-color: var(--navy) !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15) !important;
+    font-weight: 700 !important;
+}
+.stButton > button[kind="primary"]:hover {
+    background: #243455 !important;
+    border-color: #243455 !important;
+    color: white !important;
+    transform: none;
+}
+.stButton > button[kind="secondary"] {
+    background: var(--panel);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    box-shadow: none;
+}
+.stButton > button[kind="secondary"]:hover {
+    background: #eef2f7;
+    color: var(--text);
+    border-color: var(--border-2);
+    transform: none;
+}
 /* Action ⋮ link */
 .action-link { color:var(--muted-2); text-decoration:none; font-size:18px; padding:6px 8px; border-radius:6px; transition:all .15s ease; }
 .action-link:hover { color:var(--text); background:#eef2f7; }
@@ -849,26 +868,34 @@ elif page == "🎯 Leads":
 
     with lead_tab1:
         # ── Filter row + pagination setup ───────────────────────────────
-        lf1, lf2, lf3 = st.columns([2.4, 4.0, 1.2])
-        with lf1:
-            st.markdown('<div class="score-chip-wrap">', unsafe_allow_html=True)
-            score_choice = st.radio(
-                "Score filter",
-                ["All", "≥4", "≥5", "≥7", "≥9"],
-                index=3,
-                horizontal=True,
-                label_visibility="collapsed",
-                key="score_chip_choice",
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
-            min_score = {"All": 1, "≥4": 4, "≥5": 5, "≥7": 7, "≥9": 9}[score_choice]
-        with lf2:
+        # ── Score chips: button-based for reliable cross-browser rendering ───
+        # (Radio + :has() CSS doesn't work consistently on Safari / older Macs)
+        SCORE_OPTIONS = [("All", 1), ("≥4", 4), ("≥5", 5), ("≥7", 7), ("≥9", 9)]
+        if "score_chip_value" not in st.session_state:
+            st.session_state.score_chip_value = 7  # default ≥7
+
+        chip_cols = st.columns([1] * len(SCORE_OPTIONS) + [8])
+        for i, (label, value) in enumerate(SCORE_OPTIONS):
+            with chip_cols[i]:
+                is_active = (st.session_state.score_chip_value == value)
+                if st.button(
+                    label,
+                    key=f"score_chip_{value}",
+                    use_container_width=True,
+                    type="primary" if is_active else "secondary",
+                ):
+                    st.session_state.score_chip_value = value
+                    st.rerun()
+        min_score = st.session_state.score_chip_value
+
+        sf1, sf2 = st.columns([5, 1])
+        with sf1:
             lead_search = st.text_input(
                 "Search company / title",
                 placeholder="Filter by company, sector, or keyword…",
                 label_visibility="collapsed",
             )
-        with lf3:
+        with sf2:
             per_page = st.selectbox(
                 "Rows per page",
                 [5, 10, 20, 50],
@@ -1643,8 +1670,8 @@ elif page == "⚙️ System":
             st.session_state["classify_limit"] = st.number_input("Articles per run", 1, 500, 50)
         with cc2:
             st.session_state["classify_prompt"] = st.selectbox("AI Prompt Version",
-                ["E", "D", "A", "B", "C"], index=0,
-                help="E = recommended (compact v2), D = full v2, A/B/C = legacy")
+                ["A", "E", "D", "F", "B", "C"], index=0,
+                help="A = recommended")
         st.caption("ℹ️ AI Engine: gemma3:12b · Context: 4096 tokens · Post-validation: enabled")
 
     # ── Run buttons ───────────────────────────
