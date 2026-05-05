@@ -59,8 +59,8 @@ st.markdown("""
     --border: #dfe5e8;
     --border-2: #cfd8dd;
     --text: #0f172a;
-    --muted: #526173;
-    --muted-2: #8b98a8;
+    --muted: #334155;
+    --muted-2: #64748b;
     --navy: #0f172a;
     --blue: #243455;
     --blue-soft: #eef2f7;
@@ -72,7 +72,41 @@ st.markdown("""
     --red-soft: #fff0ef;
 }
 
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+html, body, [class*="css"] { 
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    color: var(--text) !important;
+}
+
+/* macOS/Safari readability fixes: Streamlit sometimes renders markdown,
+   labels and widget text in very light gray on external displays. */
+.stMarkdown, .stMarkdown p, .stCaption, label, .stText, 
+[data-testid="stMarkdownContainer"], [data-testid="stWidgetLabel"],
+[data-testid="stCaptionContainer"], .stSelectbox label, .stTextInput label,
+.stNumberInput label, .stSlider label {
+    color: var(--text) !important;
+}
+
+.stCaption, [data-testid="stCaptionContainer"],
+.page-subtitle, .section-caption, .brand-subtitle,
+.article-meta, .lead-company-sub, .score-percent {
+    color: var(--muted) !important;
+}
+
+.stTextInput input, .stNumberInput input, textarea,
+[data-baseweb="select"] * {
+    color: var(--text) !important;
+    -webkit-text-fill-color: var(--text) !important;
+}
+
+[data-testid="stSidebar"] * {
+    color: var(--text);
+}
+
+p, div, span, label {
+    font-size-adjust: none;
+}
 .stApp { background: var(--bg); color: var(--text); }
 .block-container { padding-top: 1.6rem; padding-bottom: 3rem; max-width: 1260px; }
 
@@ -274,6 +308,60 @@ hr { border-color: var(--border); margin: 1.2rem 0; }
     height: 340px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.6;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
+
+/* Extra readable mode for Mac / Safari */
+[data-testid="stSidebar"] .stRadio label,
+[data-testid="stSidebar"] [role="radiogroup"] label,
+.stTabs [data-baseweb="tab"],
+.stButton > button,
+.stDownloadButton > button {
+    font-size: 14px !important;
+    color: var(--text) !important;
+}
+
+.lead-company-name,
+.article-title,
+.country-cell,
+.project-pill,
+[data-testid="stDataFrame"] * {
+    color: var(--text) !important;
+}
+
+[data-testid="stMetricLabel"],
+.lead-row-header,
+.kpi-light .kpi-label,
+.kpi-dark .kpi-label {
+    color: #334155 !important;
+}
+
+.kpi-dark .kpi-label,
+.kpi-dark .kpi-caption {
+    color: rgba(255,255,255,0.78) !important;
+}
+
+.kpi-dark .kpi-value {
+    color: #ffffff !important;
+}
+
+.stAlert, .stAlert * {
+    color: var(--text) !important;
+}
+
+/* Re-assert primary button label color — must come AFTER the broad
+   .stButton > button rule above (which forces var(--text) for Mac readability)
+   so the active score chip stays readable. -webkit-text-fill-color is needed
+   because Safari uses it for buttons and overrides plain `color`. */
+.stButton > button[kind="primary"],
+.stDownloadButton > button[kind="primary"] {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+}
+.stButton > button[kind="primary"] *,
+.stDownloadButton > button[kind="primary"] * {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
