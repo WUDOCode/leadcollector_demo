@@ -1,6 +1,6 @@
 """
-LeadCollector – Streamlit GUI professional palette
-Run with:  streamlit run app_gui_streamlit.py
+LeadCollector – Streamlit GUI v3 (light RCG palette · model comparison)
+Run with:  streamlit run app_gui_streamlit_demo.py
 """
 
 from __future__ import annotations
@@ -668,7 +668,7 @@ with st.sidebar:
         st.markdown('<span class="db-err">● Database offline</span>', unsafe_allow_html=True)
 
     st.markdown("---")
-    page = st.radio("Navigate", ["📊 Overview", "🎯 Leads", "📈 Analytics", "⚙️ System"], label_visibility="collapsed")
+    page = st.radio("Navigate", ["📊 Overview", "🎯 Leads", "🏢 Companies", "📈 Analytics", "⚙️ System"], label_visibility="collapsed")
     st.markdown("---")
 
     if is_running():
@@ -688,13 +688,19 @@ with st.sidebar:
     if db_ok:
         pv_rows = db_fetch("select distinct prompt_version from item_scores order by prompt_version")
         pv_list = [r["prompt_version"] for r in pv_rows] if pv_rows else ["E"]
-        default_idx = pv_list.index("A") if "A" in pv_list else 0
+        default_idx = pv_list.index("F") if "F" in pv_list else (pv_list.index("A") if "A" in pv_list else 0)
         PV = st.selectbox("AI Prompt Version", pv_list, index=default_idx,
                           help="Select which AI scoring version to display")
+        mdl_rows = db_fetch("select distinct model from item_scores where model is not null order by model")
+        mdl_list = [r["model"] for r in mdl_rows] if mdl_rows else ["gemma3:12b"]
+        mdl_idx = mdl_list.index("gemma3:12b") if "gemma3:12b" in mdl_list else 0
+        MODEL = st.selectbox("AI Model", mdl_list, index=mdl_idx,
+                             help="Select which model's scores to display")
     else:
         PV = "E"
+        MODEL = "gemma3:12b"
 
-    st.caption(f"v2.0 · gemma3:12b · Prompt {PV}")
+    st.caption(f"v2.2 · {MODEL} · Prompt {PV}")
 
 
 # ═══════════════════════════════════════════════
@@ -713,9 +719,9 @@ if page == "📊 Overview":
         select
             (select count(distinct source_id) from items) as sources,
             (select count(*) from items) as articles,
-            (select count(*) from item_scores where lead_score >= 5 and prompt_version = %s) as leads,
-            (select count(*) from item_scores where lead_score >= 7 and prompt_version = %s) as strong_leads
-    """, (PV, PV))
+            (select count(*) from item_scores where lead_score >= 5 and prompt_version = %s and model = %s) as leads,
+            (select count(*) from item_scores where lead_score >= 7 and prompt_version = %s and model = %s) as strong_leads
+    """, (PV, MODEL, PV, MODEL))
     if stats:
         s = stats[0]
         m1, m2, m3, m4 = st.columns(4)
@@ -736,9 +742,9 @@ if page == "📊 Overview":
             select i.source_id, count(distinct i.item_id) as articles,
                    count(distinct s.item_id) filter (where s.lead_score >= 5) as leads
             from items i
-            left join item_scores s on s.item_id = i.item_id and s.prompt_version = %s
+            left join item_scores s on s.item_id = i.item_id and s.prompt_version = %s and s.model = %s
             group by i.source_id order by articles desc limit 15
-        """, (PV,))
+        """, (PV, MODEL))
         if not df_src.empty:
             fig = px.bar(df_src, x="articles", y="source_id", orientation="h",
                          color="leads", color_continuous_scale=["#eef2f7", "#0f172a"],
@@ -834,11 +840,12 @@ if page == "📊 Overview":
                count(*) as n
         from item_scores s
         where s.prompt_version = %s
+          and s.model = %s
           and s.classified_at >= now() - interval '30 days'
           and s.lead_score is not null
         group by 1, 2
         order by 1, 2
-    """, (PV,))
+    """, (PV, MODEL))
     if not df_activity.empty:
         # Pivot to wide for stacked area
         pivot = df_activity.pivot(index="day", columns="band", values="n").fillna(0)
@@ -897,8 +904,8 @@ elif page == "🎯 Leads":
 
     # ── Metrics row ───────────────────────────
     s1, s2, s3 = st.columns(3)
-    total_leads  = db_fetch("select count(*) as n from item_scores where lead_score >= 5 and prompt_version = %s", (PV,))
-    strong_leads = db_fetch("select count(*) as n from item_scores where lead_score >= 7 and prompt_version = %s", (PV,))
+    total_leads  = db_fetch("select count(*) as n from item_scores where lead_score >= 5 and prompt_version = %s and model = %s", (PV, MODEL))
+    strong_leads = db_fetch("select count(*) as n from item_scores where lead_score >= 7 and prompt_version = %s and model = %s", (PV, MODEL))
     total_items  = db_fetch("select count(*) as n from items")
 
     s1.metric("📦 Articles", f"{(total_items[0]['n'] if total_items else 0):,}")
@@ -917,10 +924,10 @@ elif page == "🎯 Leads":
                 (select count(*) from url_state) as urls_discovered,
                 (select count(*) from items) as articles_extracted,
                 (select count(*) from items where prefilter_pass = true) as relevance_filter,
-                (select count(*) from item_scores where prompt_version = %s) as ai_scored,
-                (select count(*) from item_scores where lead_score >= 5 and prompt_version = %s) as leads_found,
-                (select count(*) from item_scores where lead_score >= 7 and prompt_version = %s) as strong_leads
-        """, (PV, PV, PV))
+                (select count(*) from item_scores where prompt_version = %s and model = %s) as ai_scored,
+                (select count(*) from item_scores where lead_score >= 5 and prompt_version = %s and model = %s) as leads_found,
+                (select count(*) from item_scores where lead_score >= 7 and prompt_version = %s and model = %s) as strong_leads
+        """, (PV, MODEL, PV, MODEL, PV, MODEL))
         if funnel:
             f = funnel[0]
             fig_fun = go.Figure(go.Funnel(
@@ -938,9 +945,9 @@ elif page == "🎯 Leads":
         st.markdown('<p class="section-header">Score Distribution</p>', unsafe_allow_html=True)
         df_scores = db_fetch_df("""
             select lead_score as score, count(*) as count
-            from item_scores where lead_score is not null and prompt_version = %s
+            from item_scores where lead_score is not null and prompt_version = %s and model = %s
             group by lead_score order by lead_score
-        """, (PV,))
+        """, (PV, MODEL))
         if not df_scores.empty:
             colors = ["#0f172a" if s >= 7 else "#243455" if s >= 5 else "#526173"
                       for s in df_scores["score"]]
@@ -992,7 +999,7 @@ elif page == "🎯 Leads":
             )
 
         # Reset to page 1 whenever the filter changes.
-        filter_signature = f"{PV}|{min_score}|{lead_search}|{per_page}"
+        filter_signature = f"{PV}|{MODEL}|{min_score}|{lead_search}|{per_page}"
         if st.session_state.get("lead_filter_signature") != filter_signature:
             st.session_state.lead_page = 1
             st.session_state.lead_filter_signature = filter_signature
@@ -1016,10 +1023,11 @@ elif page == "🎯 Leads":
                 group by cluster_id
             ) cs on cs.cluster_id = i.cluster_id
             where s.prompt_version = %s
+              and s.model = %s
               and s.lead_score >= %s
               and (i.cluster_id is null or i.is_cluster_canonical = true)
         """
-        params_leads: list = [PV, min_score]
+        params_leads: list = [PV, MODEL, min_score]
         if lead_search:
             base_from_where += " and (s.lead_company ilike %s or i.title ilike %s or i.sector ilike %s)"
             params_leads += [f"%{lead_search}%", f"%{lead_search}%", f"%{lead_search}%"]
@@ -1340,10 +1348,11 @@ elif page == "🎯 Leads":
                 from items where cluster_id is not null group by cluster_id
             ) cs on cs.cluster_id = i.cluster_id
             where s.prompt_version = %s
+              and s.model = %s
               and s.lead_score >= %s
               and (i.cluster_id is null or i.is_cluster_canonical = true)
         """
-        rparams: list = [PV, review_min]
+        rparams: list = [PV, MODEL, review_min]
         if status_filter != "all":
             sql_review += " and coalesce(ll.label, 'new') = %s"
             rparams.append(status_filter)
@@ -1390,6 +1399,35 @@ elif page == "🎯 Leads":
             sc5.metric("Rejected",  counts.get("rejected", 0))
 
     # ───────────────────────────────────────────────
+    #  Sales hooks — non-leads with an outreach angle (prompt F+)
+    # ───────────────────────────────────────────────
+    _has_hooks_col = db_fetch("""
+        select 1 from information_schema.columns
+        where table_name = 'item_scores' and column_name = 'sales_hook'
+    """)
+    hooks = db_fetch_df("""
+        select
+            coalesce(s.lead_company, s.lead_who, '—') as company,
+            coalesce(s.lead_country, '—') as country,
+            s.sales_hook as hook,
+            coalesce(i.title, '(no title)') as title,
+            i.url,
+            i.created_at::date as date
+        from item_scores s
+        join items i using(item_id)
+        where s.sales_hook is not null
+          and s.prompt_version = %s and s.model = %s
+        order by i.created_at desc limit 100
+    """, (PV, MODEL)) if _has_hooks_col else __import__("pandas").DataFrame()
+    if not hooks.empty:
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+        with st.expander(f"🪝  Sales Hooks — {len(hooks)} outreach angles from non-leads", expanded=False):
+            st.caption("Articles that are not leads but contain a fact usable for a sales pitch "
+                       "(certifications, CO₂ targets, modal-shift statements). Captured from prompt version F onwards.")
+            st.dataframe(hooks, use_container_width=True, hide_index=True, height=320,
+                         column_config={"url": st.column_config.LinkColumn("URL")})
+
+    # ───────────────────────────────────────────────
     #  Bottom KPI strip (Phase 4)
     # ───────────────────────────────────────────────
     st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
@@ -1397,20 +1435,20 @@ elif page == "🎯 Leads":
         """
         select
             (select count(*) from item_scores
-                where lead_score >= 9 and prompt_version = %s
+                where lead_score >= 9 and prompt_version = %s and model = %s
                   and classified_at >= now() - interval '7 days') as elite_7d,
             (select count(*) from item_scores
-                where lead_score >= 9 and prompt_version = %s
+                where lead_score >= 9 and prompt_version = %s and model = %s
                   and classified_at < now() - interval '7 days'
                   and classified_at >= now() - interval '14 days') as elite_prev7,
             (select round(avg(lead_score)::numeric, 1) from item_scores
-                where lead_score is not null and prompt_version = %s) as avg_score,
+                where lead_score is not null and prompt_version = %s and model = %s) as avg_score,
             (select count(distinct i.lead_country) from items i
                 join item_scores s using(item_id)
-                where s.prompt_version = %s and s.lead_score >= 5
+                where s.prompt_version = %s and s.model = %s and s.lead_score >= 5
                   and i.lead_country is not null and i.lead_country <> '') as countries
         """,
-        (PV, PV, PV, PV),
+        (PV, MODEL, PV, MODEL, PV, MODEL, PV, MODEL),
     )
     if kpi_data:
         k = kpi_data[0]
@@ -1428,11 +1466,11 @@ elif page == "🎯 Leads":
             """
             select i.lead_country as country, count(*) as n
             from items i join item_scores s using(item_id)
-            where s.prompt_version = %s and s.lead_score >= 5
+            where s.prompt_version = %s and s.model = %s and s.lead_score >= 5
               and i.lead_country is not null and i.lead_country <> ''
             group by 1 order by n desc limit 10
             """,
-            (PV,),
+            (PV, MODEL),
         )
 
         kc1, kc2, kc3 = st.columns(3)
@@ -1498,6 +1536,166 @@ elif page == "🎯 Leads":
 
 
 # ═══════════════════════════════════════════════
+#  PAGE: COMPANIES  (company net, June 2026)
+# ═══════════════════════════════════════════════
+elif page == "🏢 Companies":
+    if not db_ok:
+        st.error("⚠️  Database not reachable.")
+        st.stop()
+
+    st.markdown('<p class="page-kicker">COMPANY NET</p>', unsafe_allow_html=True)
+    st.markdown("# Companies")
+    st.markdown('<p class="page-subtitle">Every company the pipeline has seen — leads, news, sales hooks and partner connections in one place.</p>', unsafe_allow_html=True)
+
+    _has_links_tbl = db_fetch("""
+        select 1 from information_schema.tables where table_name = 'company_links'
+    """)
+    _has_hook_col = db_fetch("""
+        select 1 from information_schema.columns
+        where table_name = 'item_scores' and column_name = 'sales_hook'
+    """)
+
+    comp_rows = db_fetch("""
+        select lead_company as company,
+               count(*) as articles,
+               max(lead_score) as best,
+               count(*) filter (where lead_score >= 5) as leads
+        from item_scores
+        where lead_company is not null and lead_company <> ''
+          and prompt_version = %s and model = %s
+        group by lead_company
+        order by leads desc, articles desc, company
+    """, (PV, MODEL))
+
+    if not comp_rows:
+        st.info("No companies yet — run the pipeline first.")
+        st.stop()
+
+    cc1, cc2 = st.columns([3, 2])
+    with cc1:
+        comp_names = [r["company"] for r in comp_rows]
+        # allow deep-link from connections list
+        default_company = st.session_state.get("company_select_override")
+        idx = comp_names.index(default_company) if default_company in comp_names else 0
+        sel = st.selectbox("Company", comp_names, index=idx,
+                           format_func=lambda c: f"{c}  ({next(r['articles'] for r in comp_rows if r['company']==c)} articles)")
+        st.session_state["company_select_override"] = None
+    with cc2:
+        comp_search = st.text_input("Filter list", placeholder="type to narrow the dropdown…")
+        if comp_search:
+            filtered = [c for c in comp_names if comp_search.lower() in c.lower()]
+            if filtered and sel not in filtered:
+                sel = filtered[0]
+
+    meta = next(r for r in comp_rows if r["company"] == sel)
+
+    # ── Profile KPIs ──────────────────────────
+    prof = db_fetch("""
+        select count(*) as articles,
+               max(s.lead_score) as best,
+               count(*) filter (where s.lead_score >= 5) as leads,
+               count(distinct s.lead_country) filter (where s.lead_country is not null and s.lead_country <> '') as countries,
+               max(i.created_at)::date as last_seen,
+               max(i.lead_website) as website,
+               string_agg(distinct i.sector, ', ') filter (where i.sector is not null) as sectors
+        from item_scores s join items i using(item_id)
+        where s.lead_company = %s and s.prompt_version = %s and s.model = %s
+    """, (sel, PV, MODEL))
+    p = prof[0] if prof else {}
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Articles", p.get("articles") or 0)
+    k2.metric("🎯 Leads (≥5)", p.get("leads") or 0)
+    k3.metric("⭐ Best Score", p.get("best") or "—")
+    k4.metric("Countries", p.get("countries") or 0)
+    k5.metric("Last Seen", str(p.get("last_seen") or "—"))
+    chips = []
+    if p.get("sectors"):
+        chips.append(f"Sectors: {p['sectors']}")
+    if p.get("website"):
+        chips.append(f"Web: {p['website']}")
+    if chips:
+        st.caption("  ·  ".join(chips))
+
+    st.markdown("---")
+    tl_col, net_col = st.columns([3, 2])
+
+    # ── Timeline: all articles for this company ──
+    with tl_col:
+        st.markdown('<p class="section-header">News & Lead Timeline</p>', unsafe_allow_html=True)
+        df_tl = db_fetch_df("""
+            select i.created_at::date as date,
+                   s.lead_score as score,
+                   coalesce(s.lead_what, '—') as what,
+                   coalesce(s.lead_when, '—') as "when",
+                   coalesce(i.title, '(no title)') as title,
+                   i.url
+            from item_scores s join items i using(item_id)
+            where s.lead_company = %s and s.prompt_version = %s and s.model = %s
+            order by i.created_at desc limit 200
+        """, (sel, PV, MODEL))
+        if not df_tl.empty:
+            st.dataframe(df_tl, use_container_width=True, hide_index=True, height=380,
+                         column_config={
+                             "score": st.column_config.NumberColumn("Score", format="%d ⭐"),
+                             "url":   st.column_config.LinkColumn("URL"),
+                         })
+        else:
+            st.info("No articles for this company under the selected model/prompt.")
+
+        # Sales hooks for this company
+        if _has_hook_col:
+            df_h = db_fetch_df("""
+                select i.created_at::date as date, s.sales_hook as hook, i.url
+                from item_scores s join items i using(item_id)
+                where s.lead_company = %s and s.sales_hook is not null
+                  and s.prompt_version = %s and s.model = %s
+                order by i.created_at desc limit 20
+            """, (sel, PV, MODEL))
+            if not df_h.empty:
+                st.markdown('<p class="section-header">🪝 Sales Hooks</p>', unsafe_allow_html=True)
+                st.dataframe(df_h, use_container_width=True, hide_index=True, height=160,
+                             column_config={"url": st.column_config.LinkColumn("URL")})
+
+    # ── Connections / partner net ─────────────
+    with net_col:
+        st.markdown('<p class="section-header">Connections</p>', unsafe_allow_html=True)
+        links = db_fetch("""
+            select company_a, company_b, relation, mention_count, last_seen::date as last_seen
+            from company_links
+            where company_a = %s or company_b = %s
+            order by mention_count desc, last_seen desc limit 30
+        """, (sel, sel)) if _has_links_tbl else []
+        if links:
+            # mini graph (selected company + direct partners)
+            def _esc(s):
+                return s.replace('"', "'")
+            dot = ['graph G { bgcolor="transparent"; node [shape=box, style="rounded,filled", '
+                   'fillcolor="#eef2f7", color="#243455", fontname="Inter", fontsize=11];',
+                   f'"{_esc(sel)}" [fillcolor="#0f172a", fontcolor="white"];']
+            for l in links:
+                other = l["company_b"] if l["company_a"] == sel else l["company_a"]
+                dot.append(f'"{_esc(sel)}" -- "{_esc(other)}" [label="{l["relation"]} ({l["mention_count"]})", '
+                           f'fontsize=9, fontname="Inter", color="#8b98a8"];')
+            dot.append("}")
+            try:
+                st.graphviz_chart("\n".join(dot), use_container_width=True)
+            except Exception:
+                pass
+            for l in links:
+                other = l["company_b"] if l["company_a"] == sel else l["company_a"]
+                lc1, lc2 = st.columns([4, 1])
+                lc1.markdown(f"**{other}**  \n<span style='color:var(--muted); font-size:12px;'>"
+                             f"{l['relation']} · {l['mention_count']}× · last {l['last_seen']}</span>",
+                             unsafe_allow_html=True)
+                if lc2.button("→", key=f"goto_{other}", help=f"Open {other}"):
+                    st.session_state["company_select_override"] = other
+                    st.rerun()
+        else:
+            st.info("No partner connections recorded yet. Edges are created automatically "
+                    "when prompt F finds a named partner company (the 'With:' part).")
+
+
+# ═══════════════════════════════════════════════
 #  PAGE: ANALYTICS
 # ═══════════════════════════════════════════════
 elif page == "📈 Analytics":
@@ -1513,9 +1711,9 @@ elif page == "📈 Analytics":
         select
             (select count(distinct source_id) from items) as sources,
             (select count(*) from items) as articles,
-            (select count(*) from item_scores where prompt_version = %s) as classified,
-            (select count(*) from item_scores where lead_score >= 5 and prompt_version = %s) as leads
-    """, (PV, PV))
+            (select count(*) from item_scores where prompt_version = %s and model = %s) as classified,
+            (select count(*) from item_scores where lead_score >= 5 and prompt_version = %s and model = %s) as leads
+    """, (PV, MODEL, PV, MODEL))
     if stats:
         s = stats[0]
         am1, am2, am3, am4 = st.columns(4)
@@ -1544,7 +1742,7 @@ elif page == "📈 Analytics":
                             else 'Pending'
                         end as category, count(*) as n
                     from items
-                    where item_id not in (select item_id from item_scores where prompt_version = %s)
+                    where item_id not in (select item_id from item_scores where prompt_version = %s and model = %s)
                     group by 1
                     union all
                     -- AI scored from item_scores
@@ -1556,10 +1754,10 @@ elif page == "📈 Analytics":
                             else 'Not a lead (0-2)'
                         end as category, count(*) as n
                     from item_scores
-                    where prompt_version = %s
+                    where prompt_version = %s and model = %s
                     group by 1
                 ) sub group by 1 order by 2 desc
-            """, (PV, PV))
+            """, (PV, MODEL, PV, MODEL))
             if not df_class.empty:
                 CAT_COLORS = {
                     "Strong lead (7-10)": "#0f172a", "Possible lead (5-6)": "#243455",
@@ -1580,9 +1778,9 @@ elif page == "📈 Analytics":
                 select lead_country as country, count(*) as leads
                 from item_scores
                 where lead_score >= 3 and lead_country is not null and lead_country != ''
-                    and prompt_version = %s
+                    and prompt_version = %s and model = %s
                 group by lead_country order by leads desc limit 12
-            """, (PV,))
+            """, (PV, MODEL))
             if not df_geo.empty:
                 fig_geo = px.bar(df_geo, x="leads", y="country", orientation="h",
                                  color="leads", color_continuous_scale=["#eef2f7", "#0f172a"])
@@ -1597,9 +1795,9 @@ elif page == "📈 Analytics":
         st.markdown('<p class="section-header">Score Distribution (all AI-scored articles)</p>', unsafe_allow_html=True)
         df_scores = db_fetch_df("""
             select lead_score as score, count(*) as articles
-            from item_scores where lead_score is not null and prompt_version = %s
+            from item_scores where lead_score is not null and prompt_version = %s and model = %s
             group by lead_score order by lead_score
-        """, (PV,))
+        """, (PV, MODEL))
         if not df_scores.empty:
             colors = ["#0f172a" if s >= 7 else "#243455" if s >= 5 else "#526173" for s in df_scores["score"]]
             fig_sd = px.bar(df_scores, x="score", y="articles", text="articles")
@@ -1620,10 +1818,10 @@ elif page == "📈 Analytics":
                 max(s.lead_score) as best,
                 count(distinct s.item_id) filter (where s.lead_score >= 5) as leads
             from items i
-            left join item_scores s on s.item_id = i.item_id and s.prompt_version = %s
+            left join item_scores s on s.item_id = i.item_id and s.prompt_version = %s and s.model = %s
             group by i.source_id
             order by avg(s.lead_score) desc nulls last
-        """, (PV,))
+        """, (PV, MODEL))
         if not df_sp.empty:
             st.dataframe(df_sp, use_container_width=True, hide_index=True, height=400)
 
@@ -1701,13 +1899,14 @@ elif page == "📈 Analytics":
                 st.plotly_chart(fig_tl, use_container_width=True)
 
     # ── Developer tools (hidden) ──────────────
-    with st.expander("🔧 Developer: Prompt Comparison", expanded=False):
+    with st.expander("🔧 Developer: Model & Prompt Comparison", expanded=False):
         df_pc = db_fetch_df("""
-            select prompt_version, count(*) as articles,
+            select model, prompt_version, count(*) as articles,
                 round(avg(lead_score)::numeric, 2) as avg_score,
                 count(*) filter (where lead_score >= 5) as "leads_5+",
-                count(*) filter (where lead_score >= 7) as "leads_7+"
-            from item_scores group by prompt_version order by prompt_version
+                count(*) filter (where lead_score >= 7) as "leads_7+",
+                round(avg(elapsed_s)::numeric, 2) as avg_s_per_article
+            from item_scores group by model, prompt_version order by model, prompt_version
         """)
         if not df_pc.empty:
             st.dataframe(df_pc, use_container_width=True, hide_index=True)
@@ -1753,19 +1952,36 @@ elif page == "⚙️ System":
 
     # ── Classify settings ─────────────────────
     with st.expander("▶  AI Classification Settings", expanded=False):
-        cc1, cc2 = st.columns(2)
+        cc1, cc2, cc3 = st.columns(3)
         with cc1:
             st.session_state["classify_limit"] = st.number_input("Articles per run", 1, 500, 50)
         with cc2:
             st.session_state["classify_prompt"] = st.selectbox("AI Prompt Version",
-                ["A", "E", "D", "F", "B", "C"], index=0,
-                help="A = recommended")
-        st.caption("ℹ️ AI Engine: gemma3:12b · Context: 4096 tokens · Post-validation: enabled")
+                ["F", "A", "E", "D", "B", "C"], index=0,
+                help="F = recommended (A + feedback fixes: normalized when, structured description, "
+                     "strict investment, sales hooks). A = frozen baseline for comparison.")
+        with cc3:
+            st.session_state["classify_model"] = st.selectbox("AI Model",
+                ["gemma3:12b", "qwen2.5:14b", "qwen2.5:3b"], index=0,
+                help="Ollama model used for classification. Results are stored per model, "
+                     "so you can run the same articles with several models and compare.")
+        st.caption(f"ℹ️ AI Engine: {st.session_state.get('classify_model', 'gemma3:12b')} · Context: 4096 tokens · Post-validation: enabled")
+
+        st.markdown("---")
+        st.markdown("**🔬 Comparison run** — classifies the same pending articles once per model × prompt combination, sequentially.")
+        mc1, mc2 = st.columns(2)
+        with mc1:
+            st.session_state["compare_models"] = st.multiselect("Models",
+                ["gemma3:12b", "qwen2.5:14b", "qwen2.5:3b"],
+                default=["gemma3:12b", "qwen2.5:14b"])
+        with mc2:
+            st.session_state["compare_prompts"] = st.multiselect("Prompts",
+                ["F", "A", "E", "D", "B", "C"], default=["F", "A"])
 
     # ── Run buttons ───────────────────────────
     st.markdown('<p class="section-header">Run Pipeline</p>', unsafe_allow_html=True)
 
-    b1, b2, b3, b4, b5 = st.columns(5)
+    b1, b2, b3, b4, b5, b6 = st.columns(6)
 
     with b1:
         st.markdown('<div class="run-btn">', unsafe_allow_html=True)
@@ -1796,10 +2012,12 @@ elif page == "⚙️ System":
         st.markdown('<div class="run-btn">', unsafe_allow_html=True)
         if st.button("🎯  Classify", use_container_width=True, disabled=disabled):
             classify_limit = st.session_state.get("classify_limit", 50)
-            classify_prompt = st.session_state.get("classify_prompt", "E")
-            start_job(f"classify (prompt {classify_prompt})",
+            classify_prompt = st.session_state.get("classify_prompt", "F")
+            classify_model = st.session_state.get("classify_model", "gemma3:12b")
+            start_job(f"classify ({classify_model}, prompt {classify_prompt})",
                       py_flags + [str(SCRIPTS_DIR / "classify.py"),
-                      "--prompt", classify_prompt, "--limit", str(classify_limit)], env_overrides)
+                      "--prompt", classify_prompt, "--model", classify_model,
+                      "--limit", str(classify_limit)], env_overrides)
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1811,15 +2029,33 @@ elif page == "⚙️ System":
             fetch    = str(SCRIPTS_DIR / "fetch.py")
             ext      = str(SCRIPTS_DIR / "extract.py")
             classify = str(SCRIPTS_DIR / "classify.py")
-            classify_prompt = st.session_state.get("classify_prompt", "E")
+            classify_prompt = st.session_state.get("classify_prompt", "F")
+            classify_model = st.session_state.get("classify_model", "gemma3:12b")
             start_job("run_all",
                 py_flags + ["-c",
                  f"import subprocess,sys;"
                  f"subprocess.run([sys.executable,{disc!r},{registry!r}],check=True);"
                  f"subprocess.run([sys.executable,{fetch!r}],check=True);"
                  f"subprocess.run([sys.executable,{ext!r}],check=True);"
-                 f"subprocess.run([sys.executable,{classify!r},'--prompt','{classify_prompt}'],check=True)"],
+                 f"subprocess.run([sys.executable,{classify!r},'--prompt','{classify_prompt}','--model','{classify_model}'],check=True)"],
                 env_overrides)
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with b6:
+        st.markdown('<div class="run-btn">', unsafe_allow_html=True)
+        if st.button("🔬  Compare", use_container_width=True, disabled=disabled,
+                     help="Runs Classify once per selected model × prompt combination, one after another"):
+            cmp_models = st.session_state.get("compare_models") or ["gemma3:12b"]
+            cmp_prompts = st.session_state.get("compare_prompts") or ["F"]
+            classify_limit = st.session_state.get("classify_limit", 50)
+            n = len(cmp_models) * len(cmp_prompts)
+            start_job(f"compare ({n} runs: {len(cmp_models)} models × {len(cmp_prompts)} prompts)",
+                      py_flags + [str(SCRIPTS_DIR / "compare_classify.py"),
+                                  "--models", *cmp_models,
+                                  "--prompts", *cmp_prompts,
+                                  "--limit", str(classify_limit)],
+                      env_overrides)
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1851,8 +2087,10 @@ elif page == "⚙️ System":
             st.rerun()
 
         log_text = st.session_state.log_buffer or "Ready. Press a run button to start.\n"
-        safe = log_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        st.markdown(f'<div class="log-box">{safe}</div>', unsafe_allow_html=True)
+        # st.code renders plain monospace text: no markdown processing, no URL
+        # auto-linking, line breaks preserved. Fixed-height container scrolls.
+        with st.container(height=360):
+            st.code(log_text, language=None)
 
         lc1, lc2 = st.columns([1, 6])
         with lc1:
